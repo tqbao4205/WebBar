@@ -26,11 +26,11 @@ public struct QuickAppsGrid: View {
     
     private var backgroundColor: Color {
         if isSuccess {
-            return Color.green.opacity(0.12)
+            return Color.green.opacity(0.16)
         } else if appState.urlErrorMessage != nil {
-            return Color.red.opacity(0.08)
+            return Color.red.opacity(0.12)
         } else {
-            return Color.primary.opacity(0.05)
+            return Color.black.opacity(0.28)
         }
     }
     
@@ -228,18 +228,23 @@ public struct QuickAppsGrid: View {
     
     // MARK: - Footer
     private var footerView: some View {
-        HStack(spacing: 12) {
-            Text(isVI ? "↵ Enter Mở" : "↵ Enter Open")
-            Text("•")
-            Text(isVI ? "⌘V Dán" : "⌘V Paste")
-            Text("•")
-            Text(isVI ? "Esc Hủy" : "Esc Cancel")
+        VStack(spacing: 0) {
+            Divider()
+                .opacity(0.12)
+            
+            HStack(spacing: 12) {
+                Text(isVI ? "↵ Enter Mở" : "↵ Enter Open")
+                Text("•")
+                Text(isVI ? "⌘V Dán" : "⌘V Paste")
+                Text("•")
+                Text(isVI ? "Esc Hủy" : "Esc Cancel")
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .foregroundColor(.secondary.opacity(0.65))
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(Color.black.opacity(0.18))
         }
-        .font(.system(size: 9.5, weight: .medium))
-        .foregroundColor(.secondary.opacity(0.6))
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity)
-        .background(Color.black.opacity(0.12))
     }
     
     // MARK: - Navigation Logic

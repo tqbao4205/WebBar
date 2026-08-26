@@ -44,13 +44,26 @@ public struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(appState.currentWindowBackgroundColor)
+                ZStack {
+                    if appState.activeTab?.isBlank == true {
+                        VisualEffectView(material: .popover, blendingMode: .behindWindow, state: .active)
+                        Color.black.opacity(0.42)
+                    } else {
+                        Color(nsColor: .windowBackgroundColor)
+                    }
+                }
             )
             .clipShape(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
-            .shadow(color: Color.black.opacity(0.32), radius: 20, x: 0, y: 10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        Color.white.opacity(appState.activeTab?.isBlank == true ? 0.16 : 0.08),
+                        lineWidth: 0.8
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.38), radius: 24, x: 0, y: 12)
             
             // Floating Active Tab Pointer Indicator (Points up to active Menu Bar icon)
             ActiveTabPointerView()
