@@ -58,6 +58,16 @@ public struct WebKitView: NSViewRepresentable {
             contentController.addUserScript(AdBlockManager.shared.createDarkModeUserScript())
         }
         
+        // 6. Inject Zalo Auto-Activation script to seamlessly dismiss multi-tab lock
+        if tab.urlString.contains("zalo.me") {
+            let zaloScript = WKUserScript(
+                source: WebKitScripts.zaloAutoActivateScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: false
+            )
+            contentController.addUserScript(zaloScript)
+        }
+        
         config.userContentController = contentController
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.preferences.isElementFullscreenEnabled = true
