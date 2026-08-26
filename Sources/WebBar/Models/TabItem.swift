@@ -56,7 +56,7 @@ public struct TabItem: Identifiable, Codable, Hashable {
     
     public var currentSize: CGSize {
         if isBlank {
-            return CGSize(width: 380, height: 165)
+            return CGSize(width: 395, height: 175)
         }
         if viewport == .custom {
             return CGSize(

@@ -23,18 +23,20 @@ public struct ContentView: View {
                 // Web Browser & AI Launcher Multi-Tab Stack (100% Edge-to-Edge)
                 ZStack {
                     ForEach(appState.tabs) { tab in
+                        let isSelected = (tab.id == appState.selectedTabId)
                         ZStack {
                             if tab.isBlank {
                                 QuickAppsGrid()
-                                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                             } else {
                                 WebKitView(appState: appState, tab: tab)
                                     .transition(.opacity)
                             }
                         }
-                        .animation(.easeInOut(duration: 0.22), value: tab.isBlank)
-                        .opacity(tab.id == appState.selectedTabId ? 1 : 0)
-                        .allowsHitTesting(tab.id == appState.selectedTabId)
+                        .opacity(isSelected ? 1 : 0)
+                        .scaleEffect(isSelected ? 1.0 : 0.985)
+                        .animation(.easeInOut(duration: 0.32), value: isSelected)
+                        .allowsHitTesting(isSelected)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -234,7 +236,7 @@ private struct ActiveTabPointerView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 1)
-        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: appState.arrowOffsetX)
+        .animation(.spring(response: 0.36, dampingFraction: 0.85), value: appState.arrowOffsetX)
         .allowsHitTesting(false)
         .zIndex(450)
     }
