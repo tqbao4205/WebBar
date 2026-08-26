@@ -98,7 +98,7 @@ public struct NavigationBarView: View {
                             }
                         } label: {
                             HStack {
-                                Label(mode.rawValue, systemImage: mode.iconName)
+                                Label(mode.displayName, systemImage: mode.iconName)
                                 if appState.activeTab?.viewport == mode {
                                     Image(systemName: "checkmark")
                                 }

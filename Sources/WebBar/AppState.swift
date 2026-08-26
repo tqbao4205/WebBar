@@ -67,7 +67,7 @@ public final class AppState: ObservableObject {
     }
     
     public var currentWindowSize: CGSize {
-        guard let tab = activeTab else { return ViewportMode.iphonePro.size }
+        guard let tab = activeTab else { return ViewportMode.iphoneSE.size }
         return tab.currentSize
     }
     
@@ -76,7 +76,7 @@ public final class AppState: ObservableObject {
     public func addNewTab(
         url: String = "",
         title: String = "New Tab",
-        viewport: ViewportMode = .iphonePro
+        viewport: ViewportMode = .iphoneSE
     ) {
         // Clean up any previous abandoned empty/blank tabs first
         if url.isEmpty {
@@ -368,10 +368,17 @@ public final class AppState: ObservableObject {
         guard let index = tabs.firstIndex(where: { $0.id == selectedTabId }) else { return }
         tabs[index].urlString = destinationUrl
         tabs[index].title = cleanInput
+        tabs[index].viewport = .iphoneSE // Mặc định chế độ hiển thị iPhone SE (375x667)
         
         urlInputText = destinationUrl
         navigationTrigger = UUID()
         saveState()
+        
+        // Smooth animated expansion to iPhone size
+        DispatchQueue.main.async {
+            MenuBarController.shared.syncStatusItems()
+            MenuBarController.shared.updatePanelFrame(animated: true)
+        }
     }
     
     public func reportNavigationFailed(for tabId: UUID, failedUrl: String, error: Error) {

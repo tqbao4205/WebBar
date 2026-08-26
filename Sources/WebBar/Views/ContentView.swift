@@ -26,10 +26,13 @@ public struct ContentView: View {
                         ZStack {
                             if tab.isBlank {
                                 QuickAppsGrid()
+                                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
                             } else {
                                 WebKitView(appState: appState, tab: tab)
+                                    .transition(.opacity)
                             }
                         }
+                        .animation(.easeInOut(duration: 0.22), value: tab.isBlank)
                         .opacity(tab.id == appState.selectedTabId ? 1 : 0)
                         .allowsHitTesting(tab.id == appState.selectedTabId)
                     }

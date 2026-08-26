@@ -547,15 +547,21 @@ public final class MenuBarController: NSObject {
         
         isProgrammaticResize = true
         if animated && panel.isVisible {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.32
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
                 panel.animator().setFrame(targetFrame, display: true)
-            }
+            }, completionHandler: { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    self?.isProgrammaticResize = false
+                }
+            })
         } else {
             panel.setFrame(targetFrame, display: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.isProgrammaticResize = false
+            }
         }
-        isProgrammaticResize = false
         
         // Update arrow center X offset relative to window, pointing with 100% precision to active tab icon
         let calculatedArrowX = tabScreenX - x
@@ -581,7 +587,10 @@ extension MenuBarController: NSWindowDelegate {
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.appState.setCustomDimensions(width: newWidth, height: newHeight, for: self.appState.selectedTabId)
+            // Only update custom dimensions if the user is in Custom mode
+            if self.appState.activeTab?.viewport == .custom {
+                self.appState.setCustomDimensions(width: newWidth, height: newHeight, for: self.appState.selectedTabId)
+            }
         }
     }
     

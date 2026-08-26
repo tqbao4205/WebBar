@@ -11,6 +11,23 @@ public enum ViewportMode: String, Codable, CaseIterable, Identifiable {
     
     public var id: String { rawValue }
     
+    public var displayName: String {
+        switch self {
+        case .iphoneSE:
+            return "iPhone SE (375×667)"
+        case .iphonePro:
+            return "iPhone 16 Pro (393×750)"
+        case .ipadMini:
+            return "iPad Mini (744×850)"
+        case .desktopCompact:
+            return "Desktop Compact (800×600)"
+        case .desktopWide:
+            return "Desktop Wide (1050×720)"
+        case .custom:
+            return "Custom"
+        }
+    }
+    
     public var size: CGSize {
         switch self {
         case .iphoneSE:

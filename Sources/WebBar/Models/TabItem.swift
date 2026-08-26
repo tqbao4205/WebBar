@@ -27,7 +27,7 @@ public struct TabItem: Identifiable, Codable, Hashable {
         title: String = "New Tab",
         urlString: String = "",
         faviconUrl: String? = nil,
-        viewport: ViewportMode = .iphonePro,
+        viewport: ViewportMode = .iphoneSE,
         customWidth: CGFloat? = nil,
         customHeight: CGFloat? = nil,
         isPinned: Bool = false,
