@@ -127,7 +127,8 @@ public final class MenuBarCapsuleNSView: NSView {
                 width: itemWidth,
                 height: itemHeight
             )
-            let isSelected = isPanelOpen && (tab.id == selectedTabId) && !isBlankActive
+            let isDraggedGhost = (isDragging && draggedTabIndex == index)
+            let isSelected = isPanelOpen && (tab.id == selectedTabId) && !isBlankActive && !isDraggedGhost
             let isHovered = (hoveredIndex == index && !isDragging)
             
             // 1. Draw Apple Liquid Glass Square Highlight behind active/hovered tab
@@ -144,7 +145,7 @@ public final class MenuBarCapsuleNSView: NSView {
                 height: iconSize
             )
             
-            let alpha: CGFloat = isSelected ? 1.0 : (isHovered ? 0.92 : 0.65)
+            let alpha: CGFloat = isDraggedGhost ? 0.22 : (isSelected ? 1.0 : (isHovered ? 0.92 : 0.65))
             ctx.saveGState()
             ctx.setAlpha(alpha)
             drawTabIcon(for: tab, key: tabKey, in: iconRect)
@@ -160,7 +161,7 @@ public final class MenuBarCapsuleNSView: NSView {
             }
             
             // Draw Red Notification Dot Badge if tab has unread messages/notifications
-            if tab.hasUnread {
+            if tab.hasUnread && !isDraggedGhost {
                 drawRedNotificationDot(in: iconRect, ctx: ctx)
             }
         }
@@ -208,42 +209,6 @@ public final class MenuBarCapsuleNSView: NSView {
             ctx.addEllipse(in: CGRect(x: dotCenter.x - dotRadius, y: dotCenter.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
             ctx.setFillColor(NSColor.white.withAlphaComponent(0.95).cgColor)
             ctx.fillPath()
-        }
-        
-        // C. Draw Floating Dragged Tab
-        if isDragging, let dragIdx = draggedTabIndex, dragIdx < webTabs.count {
-            let tab = webTabs[dragIdx]
-            let floatX = currentDragLocation.x - (itemWidth / 2.0)
-            let floatY = currentDragLocation.y - (itemHeight / 2.0)
-            let floatRect = NSRect(x: floatX, y: floatY, width: itemWidth, height: itemHeight)
-            
-            if isMarkedForDeletion {
-                let deletePath = CGPath(roundedRect: floatRect.insetBy(dx: -1.5, dy: -1.5), cornerWidth: 5.5, cornerHeight: 5.5, transform: nil)
-                ctx.addPath(deletePath)
-                ctx.setFillColor(NSColor.systemRed.withAlphaComponent(0.75).cgColor)
-                ctx.fillPath()
-                
-                let xConfig = NSImage.SymbolConfiguration(pointSize: 13.0, weight: .bold)
-                if let xImg = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Delete")?.withSymbolConfiguration(xConfig) {
-                    let xRect = NSRect(x: floatRect.midX - 6.5, y: floatRect.midY - 6.5, width: 13.0, height: 13.0)
-                    xImg.draw(in: xRect)
-                }
-            } else {
-                drawLiquidGlassPill(in: floatRect, isSelected: true, ctx: ctx)
-                
-                let tabKey = tab.id.uuidString + "_" + tab.urlString + "_" + (tab.faviconUrl ?? "")
-                let iconRect = NSRect(
-                    x: floatRect.midX - (iconSize / 2.0),
-                    y: floatRect.midY - (iconSize / 2.0),
-                    width: iconSize,
-                    height: iconSize
-                )
-                drawTabIcon(for: tab, key: tabKey, in: iconRect)
-                
-                if tab.hasUnread {
-                    drawRedNotificationDot(in: iconRect, ctx: ctx)
-                }
-            }
         }
     }
     
@@ -383,25 +348,49 @@ public final class MenuBarCapsuleNSView: NSView {
         let dy = loc.y - mouseDownLocation.y
         let distance = hypot(dx, dy)
         
-        if !isDragging && distance > 4.0 {
+        // Intentional drag threshold to avoid accidental micro-drags
+        if !isDragging && distance > 6.0 {
             isDragging = true
             draggedTabIndex = candidate
-            NSCursor.closedHand.push()
+            NSCursor.closedHand.set()
         }
         
-        if isDragging {
-            isMarkedForDeletion = isOutsideCapsule(loc)
+        if isDragging, let dragIdx = draggedTabIndex, let controller = controller {
+            let webTabs = controller.appState.tabs.filter { !$0.isBlank }
+            if dragIdx < webTabs.count {
+                let wasMarked = isMarkedForDeletion
+                isMarkedForDeletion = isOutsideCapsule(loc)
+                if isMarkedForDeletion != wasMarked {
+                    if isMarkedForDeletion {
+                        NSCursor.disappearingItem.set()
+                        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                    } else {
+                        NSCursor.closedHand.set()
+                    }
+                }
+                
+                let tab = webTabs[dragIdx]
+                let tabKey = tab.id.uuidString + "_" + tab.urlString + "_" + (tab.faviconUrl ?? "")
+                let iconImage = tabWebIcons[tabKey] ?? (tab.customIcon != nil ? NSImage(systemSymbolName: tab.customIcon!, accessibilityDescription: nil) : NSImage(systemSymbolName: "globe", accessibilityDescription: nil))
+                
+                DragTabOverlayWindow.shared.update(
+                    image: iconImage,
+                    isDeleteMode: isMarkedForDeletion,
+                    screenPoint: NSEvent.mouseLocation
+                )
+            }
             needsDisplay = true
         }
     }
     
     override public func mouseUp(with event: NSEvent) {
+        DragTabOverlayWindow.shared.dismiss()
+        NSCursor.arrow.set()
         guard let controller = controller else { return }
         let loc = convert(event.locationInWindow, from: nil)
         
         if isDragging {
-            NSCursor.pop()
-            if isMarkedForDeletion || isOutsideCapsule(loc) {
+            if isMarkedForDeletion {
                 if let dragIdx = draggedTabIndex, dragIdx < controller.appState.tabs.count {
                     let tabToDelete = controller.appState.tabs[dragIdx]
                     NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
@@ -409,7 +398,7 @@ public final class MenuBarCapsuleNSView: NSView {
                 }
             } else {
                 if let sourceIdx = draggedTabIndex {
-                    let destIdx = targetDropIndex(for: loc.x)
+                    let destIdx = targetDropIndex(for: loc.x, sourceIdx: sourceIdx)
                     if sourceIdx != destIdx {
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                         controller.appState.moveTab(from: sourceIdx, to: destIdx)
@@ -490,21 +479,38 @@ public final class MenuBarCapsuleNSView: NSView {
     
     // MARK: - Geometry & Hit-Testing Helpers
     
-    private func targetDropIndex(for locX: CGFloat) -> Int {
+    private func targetDropIndex(for locX: CGFloat, sourceIdx: Int? = nil) -> Int {
         guard let controller = controller else { return 0 }
         let webTabs = controller.appState.tabs.filter { !$0.isBlank }
         let tabsCount = webTabs.count
         guard tabsCount > 0 else { return 0 }
         
         let startX = capsulePaddingH
-        let relativeX = locX - startX
         let totalPerItem = itemWidth + itemSpacing
-        let calculated = Int(round(relativeX / totalPerItem))
-        return max(0, min(tabsCount - 1, calculated))
+        
+        guard let source = sourceIdx else {
+            let relativeX = locX - startX
+            let calculated = Int(round(relativeX / totalPerItem))
+            return max(0, min(tabsCount - 1, calculated))
+        }
+        
+        // Sticky Hysteresis: user must deliberately drag past 55% of an adjacent slot
+        let currentSlotCenter = startX + (CGFloat(source) * totalPerItem) + (itemWidth / 2.0)
+        let deltaX = locX - currentSlotCenter
+        let threshold = totalPerItem * 0.55
+        
+        if abs(deltaX) < threshold {
+            return source
+        }
+        
+        let slotOffset = Int(round(deltaX / totalPerItem))
+        let target = source + slotOffset
+        return max(0, min(tabsCount - 1, target))
     }
     
     private func isOutsideCapsule(_ loc: NSPoint) -> Bool {
-        let dragAllowance = NSRect(x: -15, y: -16, width: bounds.width + 30, height: bounds.height + 28)
+        // Safe intentional vertical drag threshold (> 45px away to trigger delete)
+        let dragAllowance = NSRect(x: -30, y: -45, width: bounds.width + 60, height: bounds.height + 70)
         return !dragAllowance.contains(loc)
     }
     
