@@ -7,7 +7,6 @@ public final class FloatingPanel: NSPanel {
             contentRect: contentRect,
             styleMask: [
                 .titled,
-                .nonactivatingPanel,
                 .fullSizeContentView,
                 .resizable
             ],
@@ -39,5 +38,43 @@ public final class FloatingPanel: NSPanel {
     
     public override var canBecomeMain: Bool {
         return true
+    }
+    
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            
+            if flags == .command {
+                switch chars {
+                case "c":
+                    if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self) { return true }
+                case "v":
+                    if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self) { return true }
+                case "x":
+                    if NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self) { return true }
+                case "a":
+                    if NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self) { return true }
+                case "z":
+                    if NSApp.sendAction(#selector(UndoManager.undo), to: nil, from: self) { return true }
+                default:
+                    break
+                }
+            } else if flags == [.command, .shift] {
+                switch chars {
+                case "z":
+                    if NSApp.sendAction(#selector(UndoManager.redo), to: nil, from: self) { return true }
+                case "v":
+                    if NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: self) { return true }
+                default:
+                    break
+                }
+            } else if flags == [.command, .option, .shift] {
+                if chars == "v" {
+                    if NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: self) { return true }
+                }
+            }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
