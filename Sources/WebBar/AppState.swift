@@ -2,10 +2,25 @@ import Foundation
 import SwiftUI
 import Combine
 
+public enum AppLanguage: String, Codable, CaseIterable, Identifiable {
+    case vietnamese = "vi"
+    case english = "en"
+    
+    public var id: String { rawValue }
+    
+    public var title: String {
+        switch self {
+        case .vietnamese: return "Tiếng Việt 🇻🇳"
+        case .english: return "English 🇬🇧"
+        }
+    }
+}
+
 public final class AppState: ObservableObject {
     @Published public var tabs: [TabItem] = []
     @Published public var selectedTabId: UUID = UUID()
     @Published public var isPinned: Bool = false
+    @Published public var language: AppLanguage = .vietnamese
     @Published public var windowOpacity: Double = 1.0
     @Published public var isSettingsOpen: Bool = false
     @Published public var urlInputText: String = ""
@@ -522,6 +537,7 @@ public final class AppState: ObservableObject {
             
             let settings: [String: Any] = [
                 "isPinned": isPinned,
+                "language": language.rawValue,
                 "windowOpacity": windowOpacity,
                 "isAdBlockEnabledGlobally": isAdBlockEnabledGlobally,
                 "customWidth": customWidth,
@@ -543,6 +559,9 @@ public final class AppState: ObservableObject {
         
         if let settings = UserDefaults.standard.dictionary(forKey: settingsDefaultsKey) {
             self.isPinned = settings["isPinned"] as? Bool ?? false
+            if let langRaw = settings["language"] as? String, let lang = AppLanguage(rawValue: langRaw) {
+                self.language = lang
+            }
             self.windowOpacity = settings["windowOpacity"] as? Double ?? 1.0
             self.isAdBlockEnabledGlobally = settings["isAdBlockEnabledGlobally"] as? Bool ?? true
             self.customWidth = settings["customWidth"] as? CGFloat ?? 393
