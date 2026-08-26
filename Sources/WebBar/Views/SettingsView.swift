@@ -57,13 +57,12 @@ public struct SettingsView: View {
                             
                             Divider()
                             
-                            // Pin on Top Toggle
-                            Toggle("Always on Top (Pin Window)", isOn: $appState.isPinned)
-                                .font(.system(size: 11))
-                            
-                            // Detach Window Toggle
-                            Toggle("Detach as Floating Window", isOn: $appState.isDetached)
-                                .font(.system(size: 11))
+                            // Keep Window Open Toggle
+                            Toggle("Keep Window Open (Ghim giữ cửa sổ)", isOn: Binding(
+                                get: { appState.isPinned },
+                                set: { appState.isPinned = $0 }
+                            ))
+                            .font(.system(size: 11))
                             
                             Divider()
                             
@@ -86,14 +85,20 @@ public struct SettingsView: View {
                                         .font(.system(size: 11))
                                     Spacer()
                                 }
-                                Slider(value: $appState.customWidth, in: 320...1200, step: 20)
+                                Slider(value: Binding(
+                                    get: { appState.customWidth },
+                                    set: { appState.customWidth = $0 }
+                                ), in: 320...1200, step: 20)
                                 
                                 HStack {
                                     Text("Height: \(Int(appState.customHeight))px")
                                         .font(.system(size: 11))
                                     Spacer()
                                 }
-                                Slider(value: $appState.customHeight, in: 400...1000, step: 20)
+                                Slider(value: Binding(
+                                    get: { appState.customHeight },
+                                    set: { appState.customHeight = $0 }
+                                ), in: 400...1000, step: 20)
                             }
                             .padding(6)
                         }

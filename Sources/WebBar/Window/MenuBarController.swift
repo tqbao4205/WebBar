@@ -65,19 +65,18 @@ public final class MenuBarController: NSObject {
         
         let menu = NSMenu()
         
-        // 1. Header with Tab Title
-        let titleItem = NSMenuItem(title: tab.isBlank ? "WebBar — New Tab" : tab.title, action: nil, keyEquivalent: "")
+        // 1. Header with Active Tab Title
+        let titleItem = NSMenuItem(title: tab.isBlank ? "WebBar" : tab.title, action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
         
-        // 2. Navigation Controls
+        // 2. Tab & Navigation Actions
         menu.addItem(createMenuItem(
-            title: "Go to URL / Search...",
-            systemImage: "magnifyingglass",
-            action: #selector(menuGoToURL(_:)),
-            keyEquivalent: "l",
-            representedObject: tabId
+            title: "New Tab",
+            systemImage: "plus",
+            action: #selector(menuNewTab),
+            keyEquivalent: "t"
         ))
         
         menu.addItem(createMenuItem(
@@ -86,24 +85,6 @@ public final class MenuBarController: NSObject {
             action: #selector(menuReloadTab),
             keyEquivalent: "r"
         ))
-        
-        if appState.currentCanGoBack {
-            menu.addItem(createMenuItem(
-                title: "Back",
-                systemImage: "chevron.backward",
-                action: #selector(menuGoBack),
-                keyEquivalent: "["
-            ))
-        }
-        
-        if appState.currentCanGoForward {
-            menu.addItem(createMenuItem(
-                title: "Forward",
-                systemImage: "chevron.forward",
-                action: #selector(menuGoForward),
-                keyEquivalent: "]"
-            ))
-        }
         
         if !tab.isBlank && !tab.urlString.isEmpty {
             menu.addItem(createMenuItem(
@@ -125,16 +106,6 @@ public final class MenuBarController: NSObject {
             ))
         }
         
-        menu.addItem(NSMenuItem.separator())
-        
-        // 3. Tab Management
-        menu.addItem(createMenuItem(
-            title: "New Tab",
-            systemImage: "plus",
-            action: #selector(menuNewTab),
-            keyEquivalent: "t"
-        ))
-        
         if appState.tabs.count > 1 {
             menu.addItem(createMenuItem(
                 title: "Close Tab",
@@ -147,21 +118,14 @@ public final class MenuBarController: NSObject {
         
         menu.addItem(NSMenuItem.separator())
         
-        // 4. Window & Viewport Controls
+        // 3. Window View & Display Controls
         menu.addItem(createMenuItem(
-            title: "Pin on Top",
+            title: "Keep Window Open (Ghim giữ mở)",
             systemImage: appState.isPinned ? "pin.fill" : "pin",
             action: #selector(menuTogglePin),
             keyEquivalent: "p",
             modifierMask: [.command, .shift],
             state: appState.isPinned ? .on : .off
-        ))
-        
-        menu.addItem(createMenuItem(
-            title: "Detach as Floating Window",
-            systemImage: "macwindow.on.rectangle",
-            action: #selector(menuToggleDetach),
-            state: appState.isDetached ? .on : .off
         ))
         
         // Device Viewport Submenu
@@ -210,33 +174,17 @@ public final class MenuBarController: NSObject {
         
         menu.addItem(NSMenuItem.separator())
         
-        // 5. Settings & Preferences
+        // 4. Settings & Quit
         menu.addItem(createMenuItem(
-            title: "Settings & Preferences...",
+            title: "Settings...",
             systemImage: "gearshape",
             action: #selector(menuOpenSettings),
             keyEquivalent: ","
         ))
         
         menu.addItem(createMenuItem(
-            title: "Launch at Login (Khởi động cùng máy)",
-            systemImage: "power",
-            action: #selector(menuToggleLaunchAtLogin),
-            state: appState.launchAtLogin ? .on : .off
-        ))
-        
-        menu.addItem(createMenuItem(
-            title: "Clear Cache & Refresh",
-            systemImage: "trash",
-            action: #selector(menuClearCache)
-        ))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // 6. Quit App
-        menu.addItem(createMenuItem(
             title: "Quit WebBar",
-            systemImage: "power.circle",
+            systemImage: "power",
             action: #selector(menuQuit),
             keyEquivalent: "q"
         ))
@@ -330,10 +278,6 @@ public final class MenuBarController: NSObject {
         appState.togglePin()
     }
     
-    @objc private func menuToggleDetach() {
-        appState.toggleDetach()
-    }
-    
     @objc private func menuZoomIn() {
         appState.zoomIn()
     }
@@ -405,9 +349,16 @@ public final class MenuBarController: NSObject {
         appState.$tabs
             .combineLatest(appState.$selectedTabId)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.capsuleView?.updateCapsuleLayout()
-                self?.updatePanelFrame()
+            .sink { [weak self] _, selectedId in
+                guard let self = self else { return }
+                self.capsuleView?.updateCapsuleLayout()
+                self.positionPanelUnderStatusBar(for: selectedId, animated: self.panel?.isVisible == true)
+                
+                // Extra layout pass to ensure macOS status item width change is fully updated on screen
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    self.capsuleView?.updateCapsuleLayout()
+                    self.positionPanelUnderStatusBar(for: selectedId, animated: false)
+                }
             }
             .store(in: &cancellables)
         
@@ -418,32 +369,6 @@ public final class MenuBarController: NSObject {
                 self?.panel?.alphaValue = CGFloat(opacity)
             }
             .store(in: &cancellables)
-    }
-    
-    private func updatePanelFrame() {
-        guard let panel = panel else { return }
-        let targetSize = appState.currentWindowSize
-        
-        if abs(panel.frame.width - targetSize.width) < 1 && abs(panel.frame.height - targetSize.height) < 1 {
-            return
-        }
-        
-        isProgrammaticResize = true
-        var currentFrame = panel.frame
-        let heightDiff = targetSize.height - currentFrame.size.height
-        
-        currentFrame.origin.y -= heightDiff
-        currentFrame.size = targetSize
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(currentFrame, display: true)
-        }, completionHandler: { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self?.isProgrammaticResize = false
-            }
-        })
     }
     
     // MARK: - Hotkey Integration
@@ -494,6 +419,21 @@ public final class MenuBarController: NSObject {
         hotkey.onResetZoom = { [weak self] in
             self?.appState.resetZoom()
         }
+        hotkey.onEscape = { [weak self] in
+            guard let self = self else { return }
+            if self.appState.isFloatingURLBarOpen {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    self.appState.isFloatingURLBarOpen = false
+                }
+            } else if self.appState.isSettingsOpen {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    self.appState.isSettingsOpen = false
+                }
+            } else if self.appState.activeTab?.isBlank == true && self.appState.tabs.count > 1 {
+                self.appState.closeActiveTabIfBlank()
+                self.syncStatusItems()
+            }
+        }
         hotkey.startMonitoring()
     }
     
@@ -506,8 +446,7 @@ public final class MenuBarController: NSObject {
             guard let self = self,
                   let panel = self.panel,
                   panel.isVisible,
-                  !self.appState.isPinned,
-                  !self.appState.isDetached else {
+                  !self.appState.isPinned else {
                 return
             }
             
@@ -539,10 +478,7 @@ public final class MenuBarController: NSObject {
     public func showPanel(for tabId: UUID? = nil) {
         guard let panel = panel else { return }
         let targetId = tabId ?? appState.selectedTabId
-        
-        if !appState.isDetached {
-            positionPanelUnderStatusBar(for: targetId)
-        }
+        positionPanelUnderStatusBar(for: targetId)
         
         panel.alphaValue = CGFloat(appState.windowOpacity)
         panel.makeKeyAndOrderFront(nil)
@@ -551,6 +487,12 @@ public final class MenuBarController: NSObject {
     }
     
     public func hidePanel() {
+        // Automatically remove abandoned blank tab when user closes/hides the panel
+        if appState.activeTab?.isBlank == true && appState.tabs.count > 1 {
+            appState.closeActiveTabIfBlank()
+            syncStatusItems()
+        }
+        
         appState.pauseAllMedia()
         panel?.orderOut(nil)
         capsuleView?.needsDisplay = true
@@ -598,17 +540,28 @@ public final class MenuBarController: NSObject {
         var x = tabScreenX - (panelSize.width / 2.0)
         x = max(screenVisibleFrame.minX + 8, min(x, screenVisibleFrame.maxX - panelSize.width - 8))
         
-        // Align flush to Menu Bar so the organic liquid bridge touches the bottom edge seamlessly
-        let y = buttonWindow.frame.minY - panelSize.height + 1
+        // Position window cleanly under the status bar
+        let y = buttonWindow.frame.minY - panelSize.height - 4
         
         let targetFrame = NSRect(x: x, y: y, width: panelSize.width, height: panelSize.height)
         
         isProgrammaticResize = true
-        panel.setFrame(targetFrame, display: true)
+        if animated && panel.isVisible {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.22
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            panel.setFrame(targetFrame, display: true)
+        }
         isProgrammaticResize = false
         
-        // Update arrow/bridge center X offset relative to window, pointing with 100% precision to active tab icon
-        appState.arrowOffsetX = max(30, min(panelSize.width - 30, tabScreenX - x))
+        // Update arrow center X offset relative to window, pointing with 100% precision to active tab icon
+        let calculatedArrowX = tabScreenX - x
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+            self.appState.arrowOffsetX = max(18, min(panelSize.width - 18, calculatedArrowX))
+        }
     }
     
     deinit {
@@ -633,11 +586,11 @@ extension MenuBarController: NSWindowDelegate {
     }
     
     public func windowDidResignKey(_ notification: Notification) {
-        guard let panel = panel, panel.isVisible, !appState.isPinned, !appState.isDetached else { return }
+        guard let panel = panel, panel.isVisible, !appState.isPinned else { return }
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let panel = self.panel, panel.isVisible,
-                  !self.appState.isPinned, !self.appState.isDetached else { return }
+                  !self.appState.isPinned else { return }
             
             // If another window of our app (like Google OAuth Login Popup or Settings) is active, keep panel open!
             if NSApp.windows.contains(where: { $0.isVisible && $0 != panel && $0.isKeyWindow }) {

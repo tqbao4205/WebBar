@@ -16,6 +16,7 @@ public final class FloatingPanel: NSPanel {
         
         self.isFloatingPanel = true
         self.level = .floating
+        self.hidesOnDeactivate = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.titleVisibility = .hidden
         self.titlebarAppearsTransparent = true

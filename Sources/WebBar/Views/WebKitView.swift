@@ -100,8 +100,9 @@ public struct WebKitView: NSViewRepresentable {
     }
     
     public func updateNSView(_ webView: WKWebView, context: Context) {
-        // Hide inactive webviews so they don't intercept AppKit events
-        let isCurrentActive = (appState.selectedTabId == tab.id)
+        // Pinned webviews are always active and visible in their dedicated windows!
+        // Unpinned webviews are visible when matching selectedTabId.
+        let isCurrentActive = tab.isPinned || (appState.selectedTabId == tab.id)
         webView.isHidden = !isCurrentActive
         
         // Update user agent if viewport changed
@@ -118,7 +119,7 @@ public struct WebKitView: NSViewRepresentable {
         // Handle URL change from explicit user navigation (address bar / new tab / search / quick apps)
         if context.coordinator.lastNavigationTrigger != appState.navigationTrigger {
             context.coordinator.lastNavigationTrigger = appState.navigationTrigger
-            if isCurrentActive, let targetUrl = URL(string: tab.urlString), !tab.urlString.isEmpty {
+            if (tab.isPinned || isCurrentActive), let targetUrl = URL(string: tab.urlString), !tab.urlString.isEmpty {
                 let request = URLRequest(url: targetUrl)
                 webView.load(request)
             }
@@ -285,20 +286,142 @@ public struct WebKitView: NSViewRepresentable {
         
         public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             isLoading = false
+            let failedUrl = webView.url?.absoluteString ?? self.parent.tab.urlString
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                return
+            }
             DispatchQueue.main.async {
                 if self.parent.appState.selectedTabId == self.parent.tab.id {
                     self.parent.appState.currentIsLoading = false
                 }
+                self.parent.appState.reportNavigationFailed(for: self.parent.tab.id, failedUrl: failedUrl, error: error)
             }
         }
         
         public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             isLoading = false
+            let failedUrl = webView.url?.absoluteString ?? self.parent.tab.urlString
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                return
+            }
             DispatchQueue.main.async {
                 if self.parent.appState.selectedTabId == self.parent.tab.id {
                     self.parent.appState.currentIsLoading = false
                 }
+                self.parent.appState.reportNavigationFailed(for: self.parent.tab.id, failedUrl: failedUrl, error: error)
             }
+        }
+        
+        private func renderErrorPage(in webView: WKWebView, for url: URL?, error: Error) {
+            let nsError = error as NSError
+            // Ignore user-cancelled navigations (e.g. clicking another link before previous finishes)
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                return
+            }
+            
+            let failedUrlString = url?.absoluteString ?? self.parent.tab.urlString
+            let rawError = error.localizedDescription
+            
+            let errorHtml = """
+            <!DOCTYPE html>
+            <html lang="vi">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { box-sizing: border-box; margin: 0; padding: 0; }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+                        background: #141416;
+                        color: #FFFFFF;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 100vh;
+                        padding: 24px;
+                        text-align: center;
+                        user-select: none;
+                    }
+                    .card {
+                        background: rgba(255, 255, 255, 0.06);
+                        border: 1px solid rgba(255, 255, 255, 0.12);
+                        border-radius: 20px;
+                        padding: 32px 24px;
+                        max-width: 360px;
+                        width: 100%;
+                        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+                    }
+                    .icon {
+                        width: 54px;
+                        height: 54px;
+                        background: rgba(255, 69, 58, 0.18);
+                        border: 1px solid rgba(255, 69, 58, 0.35);
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin: 0 auto 16px;
+                        font-size: 24px;
+                    }
+                    h2 {
+                        font-size: 16px;
+                        font-weight: 700;
+                        margin-bottom: 8px;
+                        color: #FF453A;
+                    }
+                    .url-box {
+                        background: rgba(0, 0, 0, 0.35);
+                        border-radius: 8px;
+                        padding: 8px 12px;
+                        font-family: ui-monospace, Menlo, monospace;
+                        font-size: 11px;
+                        color: rgba(255, 255, 255, 0.85);
+                        word-break: break-all;
+                        margin: 12px 0;
+                    }
+                    p.desc {
+                        font-size: 12px;
+                        color: rgba(255, 255, 255, 0.65);
+                        line-height: 1.5;
+                        margin-bottom: 22px;
+                    }
+                    .btn-group {
+                        display: flex;
+                        gap: 10px;
+                    }
+                    button {
+                        flex: 1;
+                        padding: 10px 14px;
+                        border-radius: 10px;
+                        font-size: 12.5px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        border: none;
+                        background: #0A84FF;
+                        color: #FFFFFF;
+                        transition: all 0.2s ease;
+                    }
+                    button:hover {
+                        background: #0071E3;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">⚠️</div>
+                    <h2>Không thể mở trang web</h2>
+                    <div class="url-box">\(failedUrlString)</div>
+                    <p class="desc">\(rawError)<br>Trang web không phản hồi hoặc link không tồn tại.</p>
+                    <div class="btn-group">
+                        <button onclick="window.location.reload()">🔄 Thử lại</button>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            webView.loadHTMLString(errorHtml, baseURL: url)
         }
         
         // Handle Navigation Actions (Allows clicking links on Google, search results, target="_blank", etc. just like MenuBarX / Safari)

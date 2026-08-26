@@ -19,6 +19,7 @@ public final class HotkeyManager {
     public var onZoomIn: (() -> Void)?
     public var onZoomOut: (() -> Void)?
     public var onResetZoom: (() -> Void)?
+    public var onEscape: (() -> Void)?
     
     private init() {}
     
@@ -64,6 +65,13 @@ public final class HotkeyManager {
         
         // Shortcuts when focused in app
         if !isGlobal {
+            // Esc key (keyCode 53) -> Dismiss / Cancel
+            if flags.isEmpty && keyCode == 53 {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onEscape?()
+                }
+                return true
+            }
             // Check Cmd + Zoom shortcuts (Cmd + +, Cmd + =, Cmd + -, Cmd + 0)
             if flags.contains(.command) {
                 if keyCode == 24 || key == "=" || key == "+" { // '+' key / '=' key

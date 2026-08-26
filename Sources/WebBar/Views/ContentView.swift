@@ -3,11 +3,6 @@ import AppKit
 
 public struct ContentView: View {
     @EnvironmentObject var appState: AppState
-    @State private var isTopPillHovered: Bool = false
-    
-    private var hasNotch: Bool {
-        !appState.isDetached
-    }
     
     public var body: some View {
         ZStack(alignment: .top) {
@@ -51,6 +46,9 @@ public struct ContentView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .shadow(color: Color.black.opacity(0.32), radius: 20, x: 0, y: 10)
+            
+            // Floating Active Tab Pointer Indicator (Points up to active Menu Bar icon)
+            ActiveTabPointerView()
             
             // Floating Spotlight URL Bar Overlay (Triggered via ⌘L or Menu Bar icon)
             if appState.isFloatingURLBarOpen {
@@ -186,116 +184,56 @@ private struct FloatingSpotlightURLBar: View {
     }
 }
 
-// MARK: - Notched Window Shape (Organic Liquid Bridge to Menu Bar)
+// MARK: - Active Tab Pointer Indicator (Adaptive Vibrant Spotlight)
 
-public struct NotchedWindowShape: Shape {
-    public var notchX: CGFloat
-    public var cornerRadius: CGFloat = 12
-    public var notchWidth: CGFloat = 20.0
-    public var notchHeight: CGFloat = 13.0
-    public var hasNotch: Bool = true
+private struct ActiveTabPointerView: View {
+    @EnvironmentObject var appState: AppState
     
-    public var animatableData: CGFloat {
-        get { notchX }
-        set { notchX = newValue }
-    }
-    
-    public func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let topY = hasNotch ? notchHeight : 0
-        let r = cornerRadius
-        let w = rect.width
-        let h = rect.height
-        
-        let nHalf: CGFloat = notchWidth / 2.0
-        let cx = max(r + nHalf + 4, min(w - r - nHalf - 4, notchX))
-        
-        // Start top left after corner
-        path.move(to: CGPoint(x: r, y: topY))
-        
-        if hasNotch {
-            // Straight line to left base fillet start
-            path.addLine(to: CGPoint(x: cx - nHalf - 3.0, y: topY))
+    var body: some View {
+        HStack(spacing: 0) {
+            Spacer()
+                .frame(width: max(16, appState.arrowOffsetX - 17))
             
-            // Concave fillet curve into left base of pointer
-            path.addCurve(
-                to: CGPoint(x: cx - nHalf + 1.8, y: topY - 3.0),
-                control1: CGPoint(x: cx - nHalf, y: topY),
-                control2: CGPoint(x: cx - nHalf + 0.8, y: topY - 1.2)
-            )
+            // Sleek Apple Accent Spotlight & Micro-Chevron (Vivid on both Dark & Light backgrounds)
+            VStack(spacing: 1.5) {
+                // Minimalist micro-chevron pointing up
+                Image(systemName: "chevron.compact.up")
+                    .font(.system(size: 11.5, weight: .black))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.accentColor, Color.accentColor.opacity(0.85)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(color: Color.black.opacity(0.28), radius: 2, y: 1)
+                
+                // Luminous accent light bar along the top edge
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(0.12),
+                                Color.accentColor,
+                                Color.accentColor.opacity(0.12)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 34, height: 2.6)
+                    .shadow(color: Color.accentColor.opacity(0.45), radius: 3, y: 0)
+                    .shadow(color: Color.black.opacity(0.25), radius: 1.5, y: 0.5)
+            }
+            .frame(width: 34)
             
-            // Steep tapered slope rising to the ultra-sharp apex
-            path.addCurve(
-                to: CGPoint(x: cx, y: 0),
-                control1: CGPoint(x: cx - 3.0, y: 4.0),
-                control2: CGPoint(x: cx - 0.8, y: 0)
-            )
-            
-            // Steep tapered slope descending from the ultra-sharp apex
-            path.addCurve(
-                to: CGPoint(x: cx + nHalf - 1.8, y: topY - 3.0),
-                control1: CGPoint(x: cx + 0.8, y: 0),
-                control2: CGPoint(x: cx + 3.0, y: 4.0)
-            )
-            
-            // Concave fillet curve out of right base of pointer into top edge
-            path.addCurve(
-                to: CGPoint(x: cx + nHalf + 3.0, y: topY),
-                control1: CGPoint(x: cx + nHalf - 0.8, y: topY - 1.2),
-                control2: CGPoint(x: cx + nHalf, y: topY)
-            )
+            Spacer()
         }
-        
-        // Line to top right corner
-        path.addLine(to: CGPoint(x: w - r, y: topY))
-        
-        // Top right corner
-        path.addArc(
-            center: CGPoint(x: w - r, y: topY + r),
-            radius: r,
-            startAngle: Angle(degrees: -90),
-            endAngle: Angle(degrees: 0),
-            clockwise: false
-        )
-        
-        // Right side
-        path.addLine(to: CGPoint(x: w, y: h - r))
-        
-        // Bottom right corner
-        path.addArc(
-            center: CGPoint(x: w - r, y: h - r),
-            radius: r,
-            startAngle: Angle(degrees: 0),
-            endAngle: Angle(degrees: 90),
-            clockwise: false
-        )
-        
-        // Bottom side
-        path.addLine(to: CGPoint(x: r, y: h))
-        
-        // Bottom left corner
-        path.addArc(
-            center: CGPoint(x: r, y: h - r),
-            radius: r,
-            startAngle: Angle(degrees: 90),
-            endAngle: Angle(degrees: 180),
-            clockwise: false
-        )
-        
-        // Left side
-        path.addLine(to: CGPoint(x: 0, y: topY + r))
-        
-        // Top left corner
-        path.addArc(
-            center: CGPoint(x: r, y: topY + r),
-            radius: r,
-            startAngle: Angle(degrees: 180),
-            endAngle: Angle(degrees: 270),
-            clockwise: false
-        )
-        
-        path.closeSubpath()
-        return path
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 1)
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: appState.arrowOffsetX)
+        .allowsHitTesting(false)
+        .zIndex(450)
     }
 }
 

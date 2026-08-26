@@ -6,7 +6,6 @@ public final class AppState: ObservableObject {
     @Published public var tabs: [TabItem] = []
     @Published public var selectedTabId: UUID = UUID()
     @Published public var isPinned: Bool = false
-    @Published public var isDetached: Bool = false
     @Published public var windowOpacity: Double = 1.0
     @Published public var isSettingsOpen: Bool = false
     @Published public var urlInputText: String = ""
@@ -64,12 +63,7 @@ public final class AppState: ObservableObject {
     @Published public var tabIsDarkMap: [UUID: Bool] = [:]
     
     public var currentWindowBackgroundColor: Color {
-        guard let tab = activeTab else { return Color(red: 0.11, green: 0.11, blue: 0.12) }
-        if tab.isBlank {
-            return Color(red: 0.11, green: 0.11, blue: 0.12)
-        }
-        let isDark = tabIsDarkMap[tab.id] ?? false
-        return isDark ? Color(red: 0.11, green: 0.11, blue: 0.12) : Color.white
+        return Color(nsColor: .windowBackgroundColor)
     }
     
     public var currentWindowSize: CGSize {
@@ -84,6 +78,11 @@ public final class AppState: ObservableObject {
         title: String = "New Tab",
         viewport: ViewportMode = .iphonePro
     ) {
+        // Clean up any previous abandoned empty/blank tabs first
+        if url.isEmpty {
+            cleanUpUnusedBlankTabs()
+        }
+        
         let newTab = TabItem(
             title: title.isEmpty ? "New Tab" : title,
             urlString: url,
@@ -98,6 +97,21 @@ public final class AppState: ObservableObject {
         // Immediately update layout so status item length is applied
         MenuBarController.shared.capsuleView?.updateCapsuleLayout()
         MenuBarController.shared.positionPanelUnderStatusBar(for: newTab.id)
+    }
+    
+    public func closeActiveTabIfBlank() {
+        guard let active = activeTab, active.isBlank, tabs.count > 1 else { return }
+        closeTab(id: active.id)
+    }
+    
+    public func cleanUpUnusedBlankTabs(except tabId: UUID? = nil) {
+        let blankTabs = tabs.filter { $0.isBlank && (tabId == nil || $0.id != tabId) }
+        guard !blankTabs.isEmpty, tabs.count > blankTabs.count else { return }
+        for tab in blankTabs {
+            if let idx = tabs.firstIndex(where: { $0.id == tab.id }), tabs.count > 1 {
+                tabs.remove(at: idx)
+            }
+        }
     }
     
     public func closeTab(id: UUID) {
@@ -123,6 +137,11 @@ public final class AppState: ObservableObject {
     }
     
     public func selectTab(id: UUID) {
+        // If switching from an empty/blank tab to another tab, remove the unused blank tab
+        if let current = activeTab, current.isBlank, current.id != id, tabs.count > 1 {
+            closeTab(id: current.id)
+        }
+        
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         selectedTabId = id
         urlInputText = tabs[index].urlString
@@ -228,9 +247,8 @@ public final class AppState: ObservableObject {
         tabs[index].customWidth = width
         tabs[index].customHeight = height
         tabs[index].viewport = .custom
-        customWidth = width
-        customHeight = height
         saveState()
+        objectWillChange.send()
         DispatchQueue.main.async {
             MenuBarController.shared.updatePanelFrame()
         }
@@ -267,39 +285,85 @@ public final class AppState: ObservableObject {
         }
     }
     
+    // URL Error Message (When an invalid link is entered/pasted)
+    @Published public var urlErrorMessage: String? = nil
+    
+    public func validateAndFormatURL(input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        
+        let lower = trimmed.lowercased()
+        
+        // Recognized web services & popular shortcuts
+        if lower == "zalo" || lower == "zalo.me" || lower == "chat.zalo.me" {
+            return "https://chat.zalo.me"
+        } else if lower == "google" || lower == "gg" || lower == "google.com" {
+            return "https://www.google.com"
+        } else if lower == "tiktok" || lower == "tiktok.com" {
+            return "https://www.tiktok.com/explore"
+        } else if lower == "fb" || lower == "facebook" || lower == "facebook.com" {
+            return "https://www.facebook.com"
+        } else if lower == "messenger" || lower == "messenger.com" {
+            return "https://www.messenger.com"
+        } else if lower == "youtube" || lower == "yt" || lower == "youtube.com" {
+            return "https://www.youtube.com"
+        } else if lower == "chatgpt" || lower == "gpt" {
+            return "https://chatgpt.com"
+        } else if lower == "gemini" {
+            return "https://gemini.google.com"
+        } else if lower == "claude" {
+            return "https://claude.ai"
+        } else if lower == "github" || lower == "github.com" {
+            return "https://github.com"
+        } else if lower == "notion" || lower == "notion.so" {
+            return "https://notion.so"
+        } else if lower == "telegram" || lower == "telegram.org" {
+            return "https://web.telegram.org"
+        } else if lower == "instagram" || lower == "instagram.com" {
+            return "https://www.instagram.com"
+        }
+        
+        // Complete URL with explicit http/https scheme
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            if let url = URL(string: trimmed), let host = url.host, !host.isEmpty, !host.contains(" ") {
+                return trimmed
+            }
+            return nil
+        }
+        
+        // Domain with TLD (e.g. "vnexpress.net", "sub.domain.vn/path", "localhost:3000")
+        if !trimmed.contains(" ") && (trimmed.contains(".") || trimmed.hasPrefix("localhost")) {
+            let candidate = "https://" + trimmed
+            if let url = URL(string: candidate), let host = url.host, !host.isEmpty, (host.contains(".") || host == "localhost") {
+                return candidate
+            }
+        }
+        
+        // Invalid link or raw search query -> Do not open Google Search, return nil
+        return nil
+    }
+    
     public func navigateTo(input: String) {
         let cleanInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanInput.isEmpty else { return }
         
-        let destinationUrl: String
-        let lower = cleanInput.lowercased()
-        
-        if lower == "zalo" || lower == "zalo.me" || lower == "chat.zalo.me" {
-            destinationUrl = "https://chat.zalo.me"
-        } else if lower == "google" || lower == "gg" || lower == "google.com" {
-            destinationUrl = "https://www.google.com"
-        } else if lower == "tiktok" || lower == "tiktok.com" {
-            destinationUrl = "https://www.tiktok.com/explore"
-        } else if lower == "fb" || lower == "facebook" || lower == "facebook.com" {
-            destinationUrl = "https://www.facebook.com"
-        } else if lower == "messenger" || lower == "messenger.com" {
-            destinationUrl = "https://www.messenger.com"
-        } else if lower == "youtube" || lower == "yt" || lower == "youtube.com" {
-            destinationUrl = "https://www.youtube.com"
-        } else if lower == "chatgpt" || lower == "gpt" {
-            destinationUrl = "https://chatgpt.com"
-        } else if lower == "gemini" {
-            destinationUrl = "https://gemini.google.com"
-        } else if lower == "claude" {
-            destinationUrl = "https://claude.ai"
-        } else if cleanInput.hasPrefix("http://") || cleanInput.hasPrefix("https://") {
-            destinationUrl = cleanInput
-        } else if cleanInput.contains(".") && !cleanInput.contains(" ") {
-            destinationUrl = "https://" + cleanInput
-        } else {
-            // Search query with chosen search engine (Google, DuckDuckGo, Bing)
-            destinationUrl = defaultSearchEngine.searchUrl(for: cleanInput)
+        guard let destinationUrl = validateAndFormatURL(input: cleanInput) else {
+            // Report invalid URL error immediately instead of opening search engine
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                self.urlErrorMessage = "Đường dẫn không hợp lệ! Vui lòng nhập link website (ví dụ: https://... hoặc domain.com)"
+            }
+            
+            // Auto-dismiss error alert after 4.5s
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+                withAnimation {
+                    self?.urlErrorMessage = nil
+                }
+            }
+            return
         }
+        
+        // Clear any previous error
+        self.urlErrorMessage = nil
         
         guard let index = tabs.firstIndex(where: { $0.id == selectedTabId }) else { return }
         tabs[index].urlString = destinationUrl
@@ -308,6 +372,28 @@ public final class AppState: ObservableObject {
         urlInputText = destinationUrl
         navigationTrigger = UUID()
         saveState()
+    }
+    
+    public func reportNavigationFailed(for tabId: UUID, failedUrl: String, error: Error) {
+        let nsError = error as NSError
+        // Ignore user cancellation
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+            return
+        }
+        
+        guard let index = tabs.firstIndex(where: { $0.id == tabId }) else { return }
+        
+        // Reset tab to blank so the Paste Link screen is displayed
+        tabs[index].urlString = ""
+        tabs[index].title = "New Tab"
+        
+        urlInputText = failedUrl
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            self.urlErrorMessage = "Không thể mở \"\(failedUrl)\". Vui lòng kiểm tra lại đường link hoặc kết nối mạng."
+        }
+        
+        saveState()
+        MenuBarController.shared.syncStatusItems()
     }
     
     public func reloadActiveTab() {
@@ -324,10 +410,7 @@ public final class AppState: ObservableObject {
     
     public func togglePin() {
         isPinned.toggle()
-    }
-    
-    public func toggleDetach() {
-        isDetached.toggle()
+        saveState()
     }
     
     public func toggleTopBar() {
@@ -432,7 +515,6 @@ public final class AppState: ObservableObject {
             
             let settings: [String: Any] = [
                 "isPinned": isPinned,
-                "isDetached": isDetached,
                 "windowOpacity": windowOpacity,
                 "isAdBlockEnabledGlobally": isAdBlockEnabledGlobally,
                 "customWidth": customWidth,
@@ -454,11 +536,10 @@ public final class AppState: ObservableObject {
         
         if let settings = UserDefaults.standard.dictionary(forKey: settingsDefaultsKey) {
             self.isPinned = settings["isPinned"] as? Bool ?? false
-            self.isDetached = settings["isDetached"] as? Bool ?? false
             self.windowOpacity = settings["windowOpacity"] as? Double ?? 1.0
             self.isAdBlockEnabledGlobally = settings["isAdBlockEnabledGlobally"] as? Bool ?? true
-            self.customWidth = settings["customWidth"] as? CGFloat ?? 400
-            self.customHeight = settings["customHeight"] as? CGFloat ?? 650
+            self.customWidth = settings["customWidth"] as? CGFloat ?? 393
+            self.customHeight = settings["customHeight"] as? CGFloat ?? 750
             if let engineRaw = settings["defaultSearchEngine"] as? String,
                let engine = SearchEngine(rawValue: engineRaw) {
                 self.defaultSearchEngine = engine

@@ -15,12 +15,11 @@ public final class MenuBarCapsuleNSView: NSView {
     private var isMarkedForDeletion: Bool = false
     
     // Prominent Borderless Sizing
-    private let plusWidth: CGFloat = 22
     private let itemWidth: CGFloat = 28
     private let itemHeight: CGFloat = 22
     private let iconSize: CGFloat = 21.0
     private let itemSpacing: CGFloat = 4.0
-    private let capsulePaddingH: CGFloat = 3.0
+    private let capsulePaddingH: CGFloat = 4.0
     
     public init(controller: MenuBarController) {
         self.controller = controller
@@ -35,9 +34,10 @@ public final class MenuBarCapsuleNSView: NSView {
     
     public var totalCapsuleWidth: CGFloat {
         guard let controller = controller else { return bounds.width }
-        let tabCount = controller.appState.tabs.count
-        let tabsTotalWidth = (CGFloat(tabCount) * itemWidth) + (CGFloat(max(0, tabCount - 1)) * itemSpacing)
-        return (capsulePaddingH * 2) + plusWidth + 8 + tabsTotalWidth
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
+        let totalCount = webTabs.count + 1
+        let tabsTotalWidth = (CGFloat(totalCount) * itemWidth) + (CGFloat(totalCount - 1) * itemSpacing)
+        return (capsulePaddingH * 2) + tabsTotalWidth
     }
     
     public func updateCapsuleLayout() {
@@ -56,18 +56,16 @@ public final class MenuBarCapsuleNSView: NSView {
     
     /// Returns the exact center X coordinate of the specified tab's icon inside the capsule view
     public func tabCenterRelativeX(for tabId: UUID?) -> CGFloat {
-        guard let controller = controller else { return 49.5 }
-        let tabs = controller.appState.tabs
+        guard let controller = controller else { return itemWidth / 2.0 }
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
         let index: Int
-        if let tabId = tabId, let found = tabs.firstIndex(where: { $0.id == tabId }) {
+        if let tabId = tabId, let found = webTabs.firstIndex(where: { $0.id == tabId }) {
             index = found
         } else {
-            index = 0
+            // Blank / New Tab points directly to the [+] squircle at the end!
+            index = webTabs.count
         }
-        let plusRect = NSRect(x: capsulePaddingH, y: 0, width: plusWidth, height: itemHeight)
-        let sepX = plusRect.maxX + 3.5
-        let startX = sepX + 4.5
-        let itemX = startX + (CGFloat(index) * (itemWidth + itemSpacing))
+        let itemX = capsulePaddingH + (CGFloat(index) * (itemWidth + itemSpacing))
         return itemX + (itemWidth / 2.0)
     }
     
@@ -99,53 +97,16 @@ public final class MenuBarCapsuleNSView: NSView {
         let bounds = self.bounds
         let midY = bounds.height / 2.0
         
-        // 1. Draw "+" Button (Shifted UP by 2px)
-        let plusOffsetY: CGFloat = 2.0
-        let plusRect = NSRect(
-            x: capsulePaddingH,
-            y: midY - (itemHeight / 2.0) + plusOffsetY,
-            width: plusWidth,
-            height: itemHeight
-        )
-        if hoveredIndex == -1 && !isDragging {
-            let hoverPath = CGPath(roundedRect: plusRect.insetBy(dx: 1.0, dy: 0.5), cornerWidth: 4.5, cornerHeight: 4.5, transform: nil)
-            ctx.addPath(hoverPath)
-            ctx.setFillColor(NSColor.white.withAlphaComponent(0.18).cgColor)
-            ctx.fillPath()
-        }
-        
-        let plusFont = NSFont.systemFont(ofSize: 15.0, weight: .bold)
-        let plusColor = NSColor.white.withAlphaComponent((hoveredIndex == -1 && !isDragging) ? 1.0 : 0.88)
-        let plusAttr: [NSAttributedString.Key: Any] = [
-            .font: plusFont,
-            .foregroundColor: plusColor
-        ]
-        let plusStr = NSAttributedString(string: "+", attributes: plusAttr)
-        let plusSize = plusStr.size()
-        let plusPoint = NSPoint(
-            x: plusRect.midX - (plusSize.width / 2.0),
-            y: midY - (plusSize.height / 2.0) - 0.5 + plusOffsetY
-        )
-        plusStr.draw(at: plusPoint)
-        
-        // 2. Draw Vertical Separator (Centered on midY)
-        let sepX = plusRect.maxX + 3.5
-        ctx.move(to: CGPoint(x: sepX, y: midY - 7.5))
-        ctx.addLine(to: CGPoint(x: sepX, y: midY + 7.5))
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.3).cgColor)
-        ctx.setLineWidth(1.0)
-        ctx.strokePath()
-        
-        // 3. Draw Tab Icons (Centered on midY)
-        let startX = sepX + 4.5
-        let tabs = controller.appState.tabs
+        let startX = capsulePaddingH
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
         let selectedTabId = controller.appState.selectedTabId
+        let isBlankActive = controller.appState.activeTab?.isBlank == true
         let targetDropIdx = isDragging && !isMarkedForDeletion ? targetDropIndex(for: currentDragLocation.x) : nil
         
         let isPanelOpen = (controller.panel?.isVisible == true)
         
-        // A. Draw stationary tabs
-        for (index, tab) in tabs.enumerated() {
+        // A. Draw stationary web tabs
+        for (index, tab) in webTabs.enumerated() {
             if isDragging && index == draggedTabIndex {
                 continue
             }
@@ -166,7 +127,7 @@ public final class MenuBarCapsuleNSView: NSView {
                 width: itemWidth,
                 height: itemHeight
             )
-            let isSelected = isPanelOpen && (tab.id == selectedTabId)
+            let isSelected = isPanelOpen && (tab.id == selectedTabId) && !isBlankActive
             let isHovered = (hoveredIndex == index && !isDragging)
             
             // 1. Draw Apple Liquid Glass Square Highlight behind active/hovered tab
@@ -189,15 +150,69 @@ public final class MenuBarCapsuleNSView: NSView {
             drawTabIcon(for: tab, key: tabKey, in: iconRect)
             ctx.restoreGState()
             
+            // Draw subtle active dot indicator under the selected tab icon
+            if isSelected {
+                let dotRadius: CGFloat = 1.75
+                let dotCenter = CGPoint(x: tabRect.midX, y: 1.8)
+                ctx.addEllipse(in: CGRect(x: dotCenter.x - dotRadius, y: dotCenter.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
+                ctx.setFillColor(NSColor.white.withAlphaComponent(0.95).cgColor)
+                ctx.fillPath()
+            }
+            
             // Draw Red Notification Dot Badge if tab has unread messages/notifications
             if tab.hasUnread {
                 drawRedNotificationDot(in: iconRect, ctx: ctx)
             }
         }
         
-        // B. Draw Floating Dragged Tab
-        if isDragging, let dragIdx = draggedTabIndex, dragIdx < tabs.count {
-            let tab = tabs[dragIdx]
+        // B. Draw permanent [+] Squircle Button at the end of the capsule
+        let plusIndex = webTabs.count
+        let plusItemX = startX + (CGFloat(plusIndex) * (itemWidth + itemSpacing))
+        let plusTabRect = NSRect(
+            x: plusItemX,
+            y: midY - (itemHeight / 2.0),
+            width: itemWidth,
+            height: itemHeight
+        )
+        let isPlusSelected = isPanelOpen && isBlankActive
+        let isPlusHovered = (hoveredIndex == plusIndex && !isDragging)
+        
+        if isPlusSelected || isPlusHovered {
+            drawLiquidGlassPill(in: plusTabRect, isSelected: isPlusSelected, ctx: ctx)
+        }
+        
+        let plusIconRect = NSRect(
+            x: plusTabRect.midX - (iconSize / 2.0),
+            y: midY - (iconSize / 2.0),
+            width: iconSize,
+            height: iconSize
+        )
+        
+        let plusAlpha: CGFloat = isPlusSelected ? 1.0 : (isPlusHovered ? 0.92 : 0.70)
+        ctx.saveGState()
+        ctx.setAlpha(plusAlpha)
+        if let cachedPlus = tabWebIcons["__permanent_plus_squircle__"] {
+            cachedPlus.draw(in: plusIconRect)
+        } else {
+            let blankTabDummy = TabItem(title: "New Tab", urlString: "")
+            FaviconManager.shared.getDirectWebIcon(for: blankTabDummy, size: NSSize(width: 48, height: 48)) { [weak self] img in
+                self?.tabWebIcons["__permanent_plus_squircle__"] = img
+                self?.needsDisplay = true
+            }
+        }
+        ctx.restoreGState()
+        
+        if isPlusSelected {
+            let dotRadius: CGFloat = 1.75
+            let dotCenter = CGPoint(x: plusTabRect.midX, y: 1.8)
+            ctx.addEllipse(in: CGRect(x: dotCenter.x - dotRadius, y: dotCenter.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
+            ctx.setFillColor(NSColor.white.withAlphaComponent(0.95).cgColor)
+            ctx.fillPath()
+        }
+        
+        // C. Draw Floating Dragged Tab
+        if isDragging, let dragIdx = draggedTabIndex, dragIdx < webTabs.count {
+            let tab = webTabs[dragIdx]
             let floatX = currentDragLocation.x - (itemWidth / 2.0)
             let floatY = currentDragLocation.y - (itemHeight / 2.0)
             let floatRect = NSRect(x: floatX, y: floatY, width: itemWidth, height: itemHeight)
@@ -411,23 +426,30 @@ public final class MenuBarCapsuleNSView: NSView {
         }
         
         let clickedTarget = hitIndex(for: loc)
-        if clickedTarget == -1 {
-            controller.appState.addNewTab()
-            updateCapsuleLayout()
-            DispatchQueue.main.async { [weak controller] in
-                guard let controller = controller else { return }
-                controller.capsuleView?.updateCapsuleLayout()
-                controller.positionPanelUnderStatusBar(for: controller.appState.selectedTabId)
-                controller.showPanel(for: controller.appState.selectedTabId)
-            }
-        } else if let index = clickedTarget, index >= 0 && index < controller.appState.tabs.count {
-            let tab = controller.appState.tabs[index]
-            if controller.panel?.isVisible == true && controller.appState.selectedTabId == tab.id {
-                controller.hidePanel()
-            } else {
-                controller.appState.selectTab(id: tab.id)
-                if controller.panel?.isVisible != true {
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
+        
+        if let index = clickedTarget {
+            if index < webTabs.count {
+                // Clicked an existing web tab
+                let tab = webTabs[index]
+                if controller.panel?.isVisible == true && controller.appState.selectedTabId == tab.id && controller.appState.activeTab?.isBlank == false {
+                    controller.hidePanel()
+                } else {
+                    controller.appState.selectTab(id: tab.id)
                     controller.showPanel(for: tab.id)
+                }
+            } else if index == webTabs.count {
+                // Clicked the permanent [+] New Tab button at the end!
+                if controller.panel?.isVisible == true && controller.appState.activeTab?.isBlank == true {
+                    controller.hidePanel()
+                } else if let blankTab = controller.appState.tabs.first(where: { $0.isBlank }) {
+                    controller.appState.selectTab(id: blankTab.id)
+                    if controller.panel?.isVisible != true {
+                        controller.showPanel(for: blankTab.id)
+                    }
+                } else {
+                    controller.appState.addNewTab()
+                    controller.showPanel(for: controller.appState.selectedTabId)
                 }
             }
         }
@@ -441,11 +463,15 @@ public final class MenuBarCapsuleNSView: NSView {
         guard let controller = controller else { return }
         let loc = convert(event.locationInWindow, from: nil)
         let clickedTarget = hitIndex(for: loc)
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
         
-        if let index = clickedTarget, index >= 0 && index < controller.appState.tabs.count {
-            let tab = controller.appState.tabs[index]
-            controller.showContextMenu(for: tab.id, event: event)
+        let targetTabId: UUID
+        if let index = clickedTarget, index >= 0 && index < webTabs.count {
+            targetTabId = webTabs[index].id
+        } else {
+            targetTabId = controller.appState.selectedTabId
         }
+        controller.showContextMenu(for: targetTabId, event: event)
     }
     
     override public func mouseMoved(with event: NSEvent) {
@@ -466,10 +492,11 @@ public final class MenuBarCapsuleNSView: NSView {
     
     private func targetDropIndex(for locX: CGFloat) -> Int {
         guard let controller = controller else { return 0 }
-        let tabsCount = controller.appState.tabs.count
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
+        let tabsCount = webTabs.count
         guard tabsCount > 0 else { return 0 }
         
-        let startX = capsulePaddingH + plusWidth + 8.0
+        let startX = capsulePaddingH
         let relativeX = locX - startX
         let totalPerItem = itemWidth + itemSpacing
         let calculated = Int(round(relativeX / totalPerItem))
@@ -483,14 +510,10 @@ public final class MenuBarCapsuleNSView: NSView {
     
     private func hitIndex(for loc: NSPoint) -> Int? {
         guard let controller = controller else { return nil }
-        let plusRect = NSRect(x: 0, y: 0, width: capsulePaddingH + plusWidth + 3, height: bounds.height)
-        if plusRect.contains(loc) {
-            return -1
-        }
-        
-        let startX = capsulePaddingH + plusWidth + 8
-        let tabs = controller.appState.tabs
-        for i in 0..<tabs.count {
+        let startX = capsulePaddingH
+        let webTabs = controller.appState.tabs.filter { !$0.isBlank }
+        let totalCount = webTabs.count + 1
+        for i in 0..<totalCount {
             let tabRect = NSRect(
                 x: startX + (CGFloat(i) * (itemWidth + itemSpacing)),
                 y: 0,

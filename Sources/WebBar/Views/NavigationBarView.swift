@@ -56,6 +56,14 @@ public struct NavigationBarView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
                         .focused($isTextFieldFocused)
+                        .onAppear {
+                            inputUrl = appState.activeTab?.urlString ?? ""
+                        }
+                        .onChange(of: appState.activeTab?.urlString) { newUrl in
+                            if !isTextFieldFocused {
+                                inputUrl = newUrl ?? ""
+                            }
+                        }
                         .onSubmit {
                             appState.navigateTo(input: inputUrl)
                             isTextFieldFocused = false
@@ -119,7 +127,7 @@ public struct NavigationBarView: View {
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(.plain)
-                .help(appState.isPinned ? "Unpin Window" : "Pin on Top")
+                .help(appState.isPinned ? "Unpin Window" : "Keep Window Open (Pin)")
                 
                 // Hide Bar / Zen Mode Button
                 Button {
